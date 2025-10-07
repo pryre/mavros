@@ -378,17 +378,49 @@ private:
     mavlink::common::msg::LANDING_TARGET & land_target,
     [[maybe_unused]] plugin::filter::SystemAndOk filter)
   {
-    /** @todo these transforms should be applied according to the MAV_FRAME */
-    auto position =
-      ftf::transform_frame_ned_enu(
-      Eigen::Vector3d(
-        land_target.x, land_target.y,
-        land_target.z));
-    auto orientation = ftf::transform_orientation_aircraft_baselink(
-      ftf::transform_orientation_ned_enu(
-        ftf::mavlink_to_quaternion(land_target.q)));
+    
+    Eigen::Vector3d position = Eigen::Vector3d::Zero();
+    Eigen::Quaterniond orientation = Eigen::Quaterniond::Identity();
 
-    // auto rpy = ftf::quaternion_to_rpy(orientation);
+    const auto data_frame = static_cast<MAV_FRAME>(land_target.frame);
+    switch(data_frame) {
+      case MAV_FRAME::LOCAL_NED: {
+        position = ftf::transform_frame_ned_enu(Eigen::Vector3d(
+            land_target.x,
+            land_target.y,
+            land_target.z
+          ));
+        
+        orientation = ftf::transform_orientation_aircraft_baselink(
+          ftf::transform_orientation_ned_enu(
+          ftf::mavlink_to_quaternion(
+            land_target.q
+        )));
+
+        break;
+      }
+      case MAV_FRAME::BODY_FRD: {
+        position = ftf::transform_frame_aircraft_baselink(Eigen::Vector3d(
+          land_target.x,
+          land_target.y,
+          land_target.z
+        ));
+
+        orientation = ftf::transform_orientation_aircraft_baselink(
+          ftf::mavlink_to_quaternion(
+            land_target.q
+        ));
+
+        break;
+      }
+      default: {
+        RCLCPP_WARN_STREAM(
+          get_logger(),
+          "LT: Ivalid landing target frame received: " << land_target.frame
+        );
+        return;
+      }
+    }
 
     RCLCPP_DEBUG_STREAM_THROTTLE(
       get_logger(),

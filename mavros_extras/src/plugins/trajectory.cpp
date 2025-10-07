@@ -53,6 +53,13 @@ public:
   explicit TrajectoryPlugin(plugin::UASPtr uas_)
   : Plugin(uas_, "trajectory")
   {
+    enable_node_watch_parameters();
+    
+    node_declare_and_watch_parameter(
+      "frame_id", "local_origin", [&](const rclcpp::Parameter & p) {
+      frame_id = p.as_string();
+    });
+
     trajectory_generated_sub = node->create_subscription<mavros_msgs::msg::Trajectory>(
       "~/generated", 10, std::bind(
         &TrajectoryPlugin::trajectory_cb, this, _1));
@@ -76,6 +83,7 @@ private:
 
   rclcpp::Publisher<mavros_msgs::msg::Trajectory>::SharedPtr trajectory_desired_pub;
 
+  std::string frame_id;
   // [[[cog:
   // def outl_fill_points_ned_vector(x, y, z, vec_name, vec_type, point_xyz):
   //     cog.outl(
@@ -379,10 +387,12 @@ private:
     plugin::filter::SystemAndOk filter [[maybe_unused]])
   {
     auto tr_desired = mavros_msgs::msg::Trajectory();
+    const auto header = uas->synchronized_header(frame_id, trajectory.time_usec);
 
     auto fill_msg_point =
       [&](RosPoints & p, const mavlink::common::msg::TRAJECTORY_REPRESENTATION_WAYPOINTS & t,
       const size_t i) {
+        p.header = header;
         fill_msg_position(p.position, t, i);
         fill_msg_velocity(p.velocity, t, i);
         fill_msg_acceleration(p.acceleration_or_force, t, i);
@@ -391,7 +401,8 @@ private:
         tr_desired.command[i] = t.command[i];
       };
 
-    tr_desired.header = uas->synchronized_header("local_origin", trajectory.time_usec);
+
+    tr_desired.header = header;
 
     if (trajectory.valid_points > tr_desired.point_valid.size()) {
       return;
